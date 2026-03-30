@@ -1,0 +1,11 @@
+[
+  {"dst": "192.168.1.1", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:01", "state": ["REACHABLE"]},
+  {"dst": "192.168.1.10", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:02", "state": ["STALE"]},
+  {"dst": "192.168.1.20", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:03", "state": ["REACHABLE"]},
+  {"dst": "192.168.1.30", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:04", "state": ["STALE"]},
+  {"dst": "192.168.1.40", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:05", "state": ["DELAY"]},
+  {"dst": "192.168.1.50", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:06", "state": ["REACHABLE"]},
+  {"dst": "192.168.1.100", "dev": "eth0", "state": ["FAILED"]},
+  {"dst": "192.168.1.60", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:07", "state": ["STALE"]},
+  {"dst": "192.168.1.70", "dev": "eth0", "lladdr": "aa:bb:cc:dd:ee:08", "state": ["REACHABLE"]}
+]

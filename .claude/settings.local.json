@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:\\\\Users\\\\Ben Yaeger\\\\Documents\\\\Github\\\\CyberPunk' -maxdepth 3 -type f -name *.json -o -name *.md -o -name .*rules* -o -name .cursorrules)",
+      "Bash(cd:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m cyberpunk.cli --version)",
+      "Bash(python -m cyberpunk.cli tools)",
+      "Bash(cyberpunk:*)",
+      "Bash(python -c \"from cyberpunk.agent.orchestrator import AgentOrchestrator, StatusDisplay; print\\(''imports OK''\\)\")",
+      "Bash(timeout 90 python -m cyberpunk analyze -s -v)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+llm:
+  provider: ollama
+  model: qwen2.5:7b
+  base_url: http://localhost:11434
+  temperature: 0.1
+  max_tokens: 4096
+  timeout: 120
+
+scanning:
+  target_subnet: null
+  excluded_hosts: []
+  max_concurrent_probes: 50
+  probe_timeout: 3
+
+output:
+  format: rich
+  verbosity: normal
+
+safety:
+  log_all_actions: true
+  audit_log_path: ~/.cyberpunk/audit.log
+  max_agent_iterations: 15
+
+database:
+  path: ~/.cyberpunk/network_map.db
