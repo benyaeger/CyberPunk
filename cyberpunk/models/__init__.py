@@ -179,3 +179,5 @@ class AgentMessage(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     tool_result: ToolResult | None = None
     timestamp: datetime = Field(default_factory=datetime.now)
+    eval_count: int | None = None
+    prompt_eval_count: int | None = None

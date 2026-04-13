@@ -144,7 +144,7 @@ class AgentOrchestrator:
         self.registry = registry
         self.console = console
         self.verbose = verbose
-        self.audit = AuditLogger(config.safety.audit_log_path)
+        self.audit = AuditLogger(config.safety.audit_log_dir)
         self.llm = OllamaClient(
             model=config.llm.model,
             base_url=config.llm.base_url,
@@ -215,11 +215,39 @@ class AgentOrchestrator:
                 f"[dim](iteration {iteration}/{max_iterations})[/dim]",
             )
 
+            # Audit the LLM request
+            self.audit.log_llm_request(messages, tools_schema, iteration)
+
+            # Collect streamed tokens for audit
+            token_buf: list[str] = []
+
+            def _on_token(token: str, _buf: list[str] = token_buf) -> None:
+                _buf.append(token)
+                status.add_token(token)
+
             # Call LLM with streaming token callback
+            llm_start = time.time()
             response = self.llm.chat(
                 messages,
                 tools=tools_schema,
-                on_token=status.add_token,
+                on_token=_on_token,
+            )
+            llm_elapsed = (time.time() - llm_start) * 1000
+
+            # Audit streamed tokens
+            self.audit.log_llm_tokens("".join(token_buf), iteration)
+
+            # Audit the LLM response
+            self.audit.log_llm_response(
+                content=response.content,
+                tool_calls=[
+                    {"tool_name": tc.tool_name, "arguments": tc.arguments}
+                    for tc in response.tool_calls
+                ],
+                iteration=iteration,
+                elapsed_ms=llm_elapsed,
+                eval_count=response.eval_count,
+                prompt_eval_count=response.prompt_eval_count,
             )
 
             # If no tool calls, this is the final response
@@ -266,7 +294,18 @@ class AgentOrchestrator:
                 "Summarize your findings based on the data collected so far."
             ),
         })
+
+        self.audit.log_llm_request(messages, None, max_iterations + 1)
+        llm_start = time.time()
         response = self.llm.chat(messages, tools=None, on_token=status.add_token)
+        llm_elapsed = (time.time() - llm_start) * 1000
+        self.audit.log_llm_response(
+            content=response.content,
+            tool_calls=[],
+            iteration=max_iterations + 1,
+            elapsed_ms=llm_elapsed,
+        )
+
         self.audit.log_scan(
             "scan_end",
             scan_type="stealth" if stealth else "full",
@@ -284,6 +323,7 @@ class AgentOrchestrator:
         # Check cache
         cache_key = f"{tool_name}:{sorted(tool_call.arguments.items())}"
         if cache_key in self._tool_cache:
+            self.audit.log_cache_hit(tool_name)
             status.log_cached(tool_name)
             return self._tool_cache[cache_key]
 
@@ -299,6 +339,7 @@ class AgentOrchestrator:
             self.audit.log_tool_call(
                 tool=tool_name, category="unknown", arguments=tool_call.arguments,
                 success=False, execution_time_ms=0, error=result.error,
+                result_data=None,
             )
             status.log_tool_result(tool_name, result, 0)
             return result
@@ -316,7 +357,7 @@ class AgentOrchestrator:
         # Execute
         result = tool.run(**tool_call.arguments)
 
-        # Audit
+        # Audit with full result data
         summary = ""
         if result.success and isinstance(result.data, dict):
             count = result.data.get("count")
@@ -329,6 +370,7 @@ class AgentOrchestrator:
             success=result.success,
             execution_time_ms=result.execution_time_ms,
             result_summary=summary,
+            result_data=result.data,
             error=result.error,
         )
 

@@ -27,11 +27,24 @@ DEVICE CLASSIFICATION RULES:
 - Printer identification: port 9100 (RAW), 631 (IPP), HP/Canon/Epson vendor.
 
 OUTPUT FORMAT:
-Return final analysis as structured text with clear sections:
-- Network Overview (subnet, gateway, DNS)
-- Device Inventory (table: IP, MAC, vendor, type, hostname, confidence)
-- Network Infrastructure (routers, switches, APs)
-- Notable Findings (unusual devices, unexpected services, anomalies)
+Return your final analysis as **Markdown**. Use:
+- `#` headings for each section
+- Markdown tables for device inventories
+- Bullet lists for findings
+- Bold/italic for emphasis, `code` for IPs, MACs, ports
+
+Required sections:
+## Network Overview
+Subnet, gateway, DNS.
+
+## Device Inventory
+| IP | MAC | Vendor | Type | Hostname | Confidence |
+
+## Network Infrastructure
+Routers, switches, APs.
+
+## Notable Findings
+Unusual devices, unexpected services, anomalies.
 """
 
 TASK_PROMPTS: dict[str, str] = {

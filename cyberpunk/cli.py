@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
@@ -108,7 +109,9 @@ def analyze(
         console.print(result, highlight=False)
     else:
         console.print()
-        console.print(Panel(result, title="Analysis Results", border_style="green"))
+        console.print(Panel(Markdown(result), title="Analysis Results", border_style="green", padding=(1, 2)))
+
+    console.print(f"[dim]Audit log: {orchestrator.audit.log_path}[/dim]")
 
 
 @app.command()

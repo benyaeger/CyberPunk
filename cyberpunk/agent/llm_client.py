@@ -16,7 +16,7 @@ class OllamaClient:
 
     def __init__(
         self,
-        model: str = "qwen2.5:7b",
+        model: str = "gemma4:e4b ",
         base_url: str = "http://localhost:11434",
         temperature: float = 0.1,
         max_tokens: int = 4096,
@@ -88,6 +88,8 @@ class OllamaClient:
                 # Stream the response
                 content_parts: list[str] = []
                 tool_calls: list[ToolCall] = []
+                eval_count: int | None = None
+                prompt_eval_count: int | None = None
 
                 for chunk in self._client.chat(**kwargs):
                     # Accumulate text content
@@ -107,10 +109,18 @@ class OllamaClient:
                                 )
                             )
 
+                    # Capture token counts from the final chunk
+                    if hasattr(chunk, "eval_count") and chunk.eval_count:
+                        eval_count = chunk.eval_count
+                    if hasattr(chunk, "prompt_eval_count") and chunk.prompt_eval_count:
+                        prompt_eval_count = chunk.prompt_eval_count
+
                 return AgentMessage(
                     role="assistant",
                     content="".join(content_parts),
                     tool_calls=tool_calls,
+                    eval_count=eval_count,
+                    prompt_eval_count=prompt_eval_count,
                 )
 
             except Exception as e:

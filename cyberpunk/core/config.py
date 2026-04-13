@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 class LLMConfig(BaseModel):
     provider: str = "ollama"
-    model: str = "qwen2.5:7b"
+    model: str = "gemma4:e4b"
     base_url: str = "http://localhost:11434"
     temperature: float = 0.1
     max_tokens: int = 4096
@@ -33,7 +33,7 @@ class OutputConfig(BaseModel):
 
 class SafetyConfig(BaseModel):
     log_all_actions: bool = True
-    audit_log_path: str = "~/.cyberpunk/audit.log"
+    audit_log_dir: str = "logs"
     max_agent_iterations: int = 15
 
 

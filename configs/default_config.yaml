@@ -1,6 +1,6 @@
 llm:
   provider: ollama
-  model: qwen2.5:7b
+  model: gemma4:e4b
   base_url: http://localhost:11434
   temperature: 0.1
   max_tokens: 4096
@@ -18,7 +18,7 @@ output:
 
 safety:
   log_all_actions: true
-  audit_log_path: ~/.cyberpunk/audit.log
+  audit_log_dir: logs
   max_agent_iterations: 15
 
 database:

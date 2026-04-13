@@ -311,7 +311,7 @@ Wraps the `ollama` Python SDK. Responsibilities:
 ### 6.2 Model Selection
 
 Recommended models for native tool calling:
-- **Primary:** `qwen2.5:7b` — best tool-calling accuracy at 7B, fits 8GB VRAM
+- **Primary:** `gemma4:e4b` — best tool-calling accuracy at 7B, fits 8GB VRAM
 - **Lightweight:** `qwen2.5:3b` — for constrained hardware
 - **Heavy:** `qwen2.5:14b` or `mistral-nemo:12b` — better reasoning if hardware allows
 
@@ -589,7 +589,7 @@ Required for: `StrEnum`, improved `tomllib`, `TaskGroup`, better error messages.
 # ~/.cyberpunk/config.yaml
 llm:
   provider: ollama
-  model: qwen2.5:7b
+  model: gemma4:e4b
   base_url: http://localhost:11434
   temperature: 0.1
   max_tokens: 4096
