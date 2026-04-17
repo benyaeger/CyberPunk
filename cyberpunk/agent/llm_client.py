@@ -16,7 +16,7 @@ class OllamaClient:
 
     def __init__(
         self,
-        model: str = "gemma4:e4b ",
+        model: str = "gemma4:e4b",
         base_url: str = "http://localhost:11434",
         temperature: float = 0.1,
         max_tokens: int = 4096,

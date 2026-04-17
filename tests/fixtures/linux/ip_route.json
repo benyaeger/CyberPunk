@@ -1,0 +1,35 @@
+[
+    {
+        "dst": "default",
+        "gateway": "192.168.1.1",
+        "dev": "eth0",
+        "protocol": "dhcp",
+        "metric": 100,
+        "flags": []
+    },
+    {
+        "dst": "10.0.0.0/16",
+        "gateway": "10.0.0.1",
+        "dev": "wlan0",
+        "protocol": "dhcp",
+        "metric": 600,
+        "flags": []
+    },
+    {
+        "dst": "172.17.0.0/16",
+        "dev": "docker0",
+        "protocol": "kernel",
+        "scope": "link",
+        "prefsrc": "172.17.0.1",
+        "flags": []
+    },
+    {
+        "dst": "192.168.1.0/24",
+        "dev": "eth0",
+        "protocol": "kernel",
+        "scope": "link",
+        "prefsrc": "192.168.1.10",
+        "metric": 100,
+        "flags": []
+    }
+]

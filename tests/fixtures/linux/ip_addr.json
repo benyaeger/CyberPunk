@@ -1,0 +1,99 @@
+[
+    {
+        "ifindex": 1,
+        "ifname": "lo",
+        "flags": ["LOOPBACK", "UP", "LOWER_UP"],
+        "mtu": 65536,
+        "qdisc": "noqueue",
+        "operstate": "UNKNOWN",
+        "group": "default",
+        "link_type": "loopback",
+        "address": "00:00:00:00:00:00",
+        "broadcast": "00:00:00:00:00:00",
+        "addr_info": [
+            {
+                "family": "inet",
+                "local": "127.0.0.1",
+                "prefixlen": 8,
+                "scope": "host",
+                "label": "lo",
+                "valid_life_time": 4294967295,
+                "preferred_life_time": 4294967295
+            }
+        ]
+    },
+    {
+        "ifindex": 2,
+        "ifname": "eth0",
+        "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"],
+        "mtu": 1500,
+        "qdisc": "fq_codel",
+        "operstate": "UP",
+        "group": "default",
+        "link_type": "ether",
+        "address": "aa:bb:cc:dd:ee:01",
+        "broadcast": "ff:ff:ff:ff:ff:ff",
+        "addr_info": [
+            {
+                "family": "inet",
+                "local": "192.168.1.10",
+                "prefixlen": 24,
+                "broadcast": "192.168.1.255",
+                "scope": "global",
+                "dynamic": true,
+                "label": "eth0",
+                "valid_life_time": 86399,
+                "preferred_life_time": 86399
+            }
+        ]
+    },
+    {
+        "ifindex": 3,
+        "ifname": "wlan0",
+        "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"],
+        "mtu": 1500,
+        "qdisc": "noqueue",
+        "operstate": "UP",
+        "group": "default",
+        "link_type": "ether",
+        "address": "11:22:33:44:55:66",
+        "broadcast": "ff:ff:ff:ff:ff:ff",
+        "addr_info": [
+            {
+                "family": "inet",
+                "local": "10.0.0.50",
+                "prefixlen": 16,
+                "broadcast": "10.0.255.255",
+                "scope": "global",
+                "dynamic": true,
+                "label": "wlan0",
+                "valid_life_time": 3600,
+                "preferred_life_time": 3600
+            }
+        ]
+    },
+    {
+        "ifindex": 4,
+        "ifname": "docker0",
+        "flags": ["NO-CARRIER", "BROADCAST", "MULTICAST", "UP"],
+        "mtu": 1500,
+        "qdisc": "noqueue",
+        "operstate": "DOWN",
+        "group": "default",
+        "link_type": "ether",
+        "address": "02:42:aa:bb:cc:dd",
+        "broadcast": "ff:ff:ff:ff:ff:ff",
+        "addr_info": [
+            {
+                "family": "inet",
+                "local": "172.17.0.1",
+                "prefixlen": 16,
+                "broadcast": "172.17.255.255",
+                "scope": "global",
+                "label": "docker0",
+                "valid_life_time": 4294967295,
+                "preferred_life_time": 4294967295
+            }
+        ]
+    }
+]

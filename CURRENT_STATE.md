@@ -2,14 +2,14 @@
 
 Living document of how the project is built right now. Claude updates this at the end of each session.
 
-**Last updated:** 2026-04-13
+**Last updated:** 2026-04-17
 
 ## Phase Progress
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Vertical slice: `get_arp_table` + agent loop end-to-end | **Complete** |
-| 1 | All 8 passive tools + config + audit logger | Up next |
+| 1 | All 8 passive tools + config + audit logger | **In progress** (3/8 tools done) |
 | 2 | Active tools (ping sweep, port scan, DNS reverse) + stealth gating | Planned |
 | 3 | SQLite persistence + `map` and `diff` commands | Planned |
 | 4 | mDNS, UPnP, SNMP discovery tools | Planned |
@@ -25,6 +25,8 @@ Living document of how the project is built right now. Claude updates this at th
 - **Prompts** (`agent/prompts.py`): System prompt v1 + simplified task prompts
 - **Tool system** (`tools/__init__.py`): `BaseTool` ABC, `ToolRegistry` with auto-discovery
 - **ARP tool** (`tools/arp_scanner.py`): `get_arp_table` -- Linux (JSON + text fallback), macOS, Windows parsers
+- **Interfaces tool** (`tools/interfaces.py`): `get_network_interfaces` -- Linux JSON (`ip -j addr show`), macOS (`ifconfig`), Windows (`ipconfig /all`) parsers. Returns name, IP, MAC, CIDR, subnet mask, MTU, up/down state, loopback detection.
+- **Routing tool** (`tools/routing.py`): `get_routing_table` -- Linux JSON (`ip -j route show`), macOS (`netstat -rn`), Windows (`route print`) parsers. Returns routes with destination, gateway, interface, metric. Extracts default gateway. Windows destinations normalized to CIDR notation.
 - **Models** (`models/__init__.py`): All Pydantic models -- enums, core models, agent models
 - **Config** (`core/config.py`): YAML loader with env var overrides
 - **Audit** (`core/audit.py`): Append-only JSONL audit logger
@@ -32,7 +34,7 @@ Living document of how the project is built right now. Claude updates this at th
 
 ### Tests
 
-16 passing: 9 model tests, 7 ARP tool tests (across Linux/macOS/Windows fixtures)
+42 passing: 9 model tests, 7 ARP tool tests, 14 interfaces tool tests, 12 routing tool tests (all across Linux/macOS/Windows fixtures)
 
 ### Project Structure (as built)
 
@@ -47,6 +49,8 @@ cyberpunk/
   tools/
     __init__.py
     arp_scanner.py
+    interfaces.py
+    routing.py
   models/
     __init__.py
   core/
@@ -57,6 +61,8 @@ cyberpunk/
 tests/
   fixtures/{linux,darwin,win32}/
   test_tools/test_arp_scanner.py
+  test_tools/test_interfaces.py
+  test_tools/test_routing.py
   test_models.py
 ```
 
@@ -72,7 +78,7 @@ Agent Orchestrator <-> Ollama (local LLM, native tool calling)
     +-- Safety Gate (dual-layer stealth enforcement)
     |
 Tool Registry (auto-discovery from tools/)
-    +-- Passive: get_arp_table (only one so far)
+    +-- Passive: get_arp_table, get_network_interfaces, get_routing_table
     |
 Data Layer: JSONL audit log (SQLite not yet implemented)
 ```
@@ -106,7 +112,7 @@ Things that aren't obvious from reading the code:
 ## What's Next
 
 Phase 1 work:
-- 7 remaining passive tools: interfaces, routing, connections, listeners, DNS, DHCP, MAC lookup
+- 5 remaining passive tools: connections, listeners, DNS, DHCP, MAC lookup
 - `cyberpunk tools` command polish
 - Config command (`cyberpunk config`)
 - Full stealth analysis integration test
