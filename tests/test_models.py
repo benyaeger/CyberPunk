@@ -10,9 +10,6 @@ from cyberpunk.models import (
     NetworkMap,
     OSFamily,
     ScanType,
-    ToolCategory,
-    ToolDefinition,
-    ToolResult,
 )
 
 
@@ -51,28 +48,3 @@ class TestNetworkMap:
     def test_default_scan_type(self) -> None:
         nm = NetworkMap()
         assert nm.scan_type == ScanType.PASSIVE
-
-
-class TestToolDefinition:
-    def test_ollama_schema(self) -> None:
-        td = ToolDefinition(
-            name="get_arp_table",
-            description="Read ARP cache",
-            category=ToolCategory.PASSIVE,
-        )
-        schema = td.to_ollama_schema()
-        assert schema["type"] == "function"
-        assert schema["function"]["name"] == "get_arp_table"
-        assert schema["function"]["parameters"]["type"] == "object"
-
-
-class TestToolResult:
-    def test_success(self) -> None:
-        r = ToolResult(tool_name="test", success=True, data={"count": 5})
-        assert r.success
-        assert r.data["count"] == 5
-
-    def test_failure(self) -> None:
-        r = ToolResult(tool_name="test", success=False, error="boom")
-        assert not r.success
-        assert r.error == "boom"

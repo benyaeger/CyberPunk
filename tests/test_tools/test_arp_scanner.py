@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from tests.conftest import load_fixture
+import pytest
 
-from cyberpunk.tools.arp_scanner import ArpTableTool
+from cyberpunk.tools.arp_scanner import get_arp_table
 from cyberpunk.utils.system import CommandResult
+from tests.conftest import load_fixture
 
 
 def _fake_result(stdout: str) -> CommandResult:
@@ -31,38 +32,41 @@ class TestArpTableLinuxJson:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("linux/ip_neigh.json")
-        tool = ArpTableTool()
 
         with (
             patch("cyberpunk.tools.arp_scanner.get_platform", return_value="linux"),
-            patch("cyberpunk.tools.arp_scanner.get_platform_command", side_effect=_linux_platform_command),
+            patch(
+                "cyberpunk.tools.arp_scanner.get_platform_command",
+                side_effect=_linux_platform_command,
+            ),
             patch(
                 "cyberpunk.tools.arp_scanner.run_command",
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_arp_table.invoke({})
 
-        assert result.success
-        assert result.data["count"] == 8  # FAILED entry excluded
-        assert result.data["entries"][0]["ip"] == "192.168.1.1"
-        assert result.data["entries"][0]["mac"] == "aa:bb:cc:dd:ee:01"
+        assert result["count"] == 8  # FAILED entry excluded
+        assert result["entries"][0]["ip"] == "192.168.1.1"
+        assert result["entries"][0]["mac"] == "aa:bb:cc:dd:ee:01"
 
     def test_all_entries_have_required_fields(self) -> None:
         fixture = load_fixture("linux/ip_neigh.json")
-        tool = ArpTableTool()
 
         with (
             patch("cyberpunk.tools.arp_scanner.get_platform", return_value="linux"),
-            patch("cyberpunk.tools.arp_scanner.get_platform_command", side_effect=_linux_platform_command),
+            patch(
+                "cyberpunk.tools.arp_scanner.get_platform_command",
+                side_effect=_linux_platform_command,
+            ),
             patch(
                 "cyberpunk.tools.arp_scanner.run_command",
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_arp_table.invoke({})
 
-        for entry in result.data["entries"]:
+        for entry in result["entries"]:
             assert "ip" in entry
             assert "mac" in entry
             assert "interface" in entry
@@ -73,14 +77,8 @@ class TestArpTableLinuxText:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("linux/ip_neigh.txt")
-        tool = ArpTableTool()
-
-        # Make JSON command fail so it falls back to text
-        call_count = 0
 
         def mock_run(cmd: list[str], **kwargs: object) -> CommandResult:
-            nonlocal call_count
-            call_count += 1
             if "-j" in cmd:
                 return _fake_fail()
             return _fake_result(fixture)
@@ -90,16 +88,13 @@ class TestArpTableLinuxText:
             patch("cyberpunk.tools.arp_scanner.run_command", side_effect=mock_run),
             patch(
                 "cyberpunk.tools.arp_scanner.get_platform_command",
-                side_effect=lambda k: ["ip", "-j", "neigh", "show"]
-                if k == "arp_table_json"
-                else ["ip", "neigh", "show"],
+                side_effect=_linux_platform_command,
             ),
         ):
-            result = tool.run()
+            result = get_arp_table.invoke({})
 
-        assert result.success
-        assert result.data["count"] == 8  # FAILED line has no lladdr, skipped
-        assert result.data["entries"][0]["ip"] == "192.168.1.1"
+        assert result["count"] == 8  # FAILED line has no lladdr, skipped
+        assert result["entries"][0]["ip"] == "192.168.1.1"
 
 
 class TestArpTableDarwin:
@@ -107,7 +102,6 @@ class TestArpTableDarwin:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("darwin/arp_a.txt")
-        tool = ArpTableTool()
 
         with (
             patch("cyberpunk.tools.arp_scanner.get_platform", return_value="darwin"),
@@ -117,13 +111,12 @@ class TestArpTableDarwin:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_arp_table.invoke({})
 
-        assert result.success
         # Broadcast ff:ff:ff:ff:ff:ff still shows up — darwin parser doesn't filter it
-        assert result.data["count"] == 6
-        assert result.data["entries"][0]["ip"] == "192.168.1.1"
-        assert result.data["entries"][0]["interface"] == "en0"
+        assert result["count"] == 6
+        assert result["entries"][0]["ip"] == "192.168.1.1"
+        assert result["entries"][0]["interface"] == "en0"
 
 
 class TestArpTableWin32:
@@ -131,7 +124,6 @@ class TestArpTableWin32:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("win32/arp_a.txt")
-        tool = ArpTableTool()
 
         with (
             patch("cyberpunk.tools.arp_scanner.get_platform", return_value="win32"),
@@ -141,18 +133,16 @@ class TestArpTableWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_arp_table.invoke({})
 
-        assert result.success
         # ff-ff-ff-ff-ff-ff broadcast is filtered, 224.x multicast is kept
-        assert result.data["count"] == 6
-        assert result.data["entries"][0]["ip"] == "192.168.1.1"
+        assert result["count"] == 6
+        assert result["entries"][0]["ip"] == "192.168.1.1"
         # MAC should be normalized to colon format
-        assert result.data["entries"][0]["mac"] == "aa:bb:cc:dd:ee:01"
+        assert result["entries"][0]["mac"] == "aa:bb:cc:dd:ee:01"
 
     def test_interface_captured(self) -> None:
         fixture = load_fixture("win32/arp_a.txt")
-        tool = ArpTableTool()
 
         with (
             patch("cyberpunk.tools.arp_scanner.get_platform", return_value="win32"),
@@ -162,28 +152,22 @@ class TestArpTableWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_arp_table.invoke({})
 
-        assert result.data["entries"][0]["interface"] == "192.168.1.5"
+        assert result["entries"][0]["interface"] == "192.168.1.5"
 
 
 class TestArpTableCommandNotFound:
     """Test graceful handling when the ARP command is not available."""
 
-    def test_returns_error(self) -> None:
-        tool = ArpTableTool()
-
+    def test_raises_runtime_error(self) -> None:
         with (
             patch("cyberpunk.tools.arp_scanner.get_platform", return_value="linux"),
             patch("cyberpunk.tools.arp_scanner.run_command", return_value=_fake_fail()),
             patch(
                 "cyberpunk.tools.arp_scanner.get_platform_command",
-                side_effect=lambda k: ["ip", "-j", "neigh", "show"]
-                if k == "arp_table_json"
-                else ["ip", "neigh", "show"],
+                side_effect=_linux_platform_command,
             ),
+            pytest.raises(RuntimeError),
         ):
-            result = tool.run()
-
-        assert not result.success
-        assert result.error is not None
+            get_arp_table.invoke({})

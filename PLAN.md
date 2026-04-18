@@ -23,15 +23,19 @@ CLI (Typer + Rich)
 Predefined Command Handlers (analyze, map, diff, report)
     │
     ▼
-Agent Orchestrator ←→ Ollama (local LLM w/ native tool calling)
+AgentRunner
     │
-    ├── Safety Gate (passive vs active enforcement)
+    ├── LangGraph StateGraph
+    │     ├── agent node  → ChatOllama (langchain-ollama, streaming + tool calling)
+    │     ├── tools node  → LangGraph ToolNode over wrapped @tool functions
+    │     └── summarize node (hit when iteration cap reached)
     │
+    ├── Per-run tool wrapper (cache + stealth gate + audit hooks)
     ▼
-Tool Registry (auto-discovery from tools/ directory)
+Tool collection (@tool-decorated functions, tagged "passive"/"active"/"analysis")
     │
     ├── Passive Tools (read local OS state, zero packets)
-    ├── Active Tools (send packets, require non-stealth mode)
+    ├── Active Tools (send packets, filtered out in stealth mode)
     └── Analysis Tools (process collected data, no network)
     │
     ▼
@@ -42,41 +46,42 @@ Data Layer
 
 ### 2.1 The Agent Loop
 
-This is the core runtime. Every command triggers it with a predefined prompt (not user-authored).
+The loop is a **LangGraph `StateGraph`**. Every command triggers it with a predefined prompt (not user-authored).
 
 ```
-1. Command handler builds a task prompt from predefined template + flags
-2. Send to Ollama with: system prompt + task prompt + available tool definitions
-3. LLM responds with a tool_call (structured JSON, native function calling)
-4. Agent validates:
-   a. Tool exists in registry
-   b. Arguments match schema
-   c. If tool is ACTIVE and stealth mode is on → SKIP, log why
-   d. If tool is ACTIVE and stealth mode is off → execute with audit log
-5. Execute tool, get structured result
-6. Send tool result back to LLM as a tool-role message
-7. LLM either:
-   a. Returns another tool_call → go to step 3
-   b. Returns final text response → proceed to output
-8. Parse LLM's final response, render via Rich
-9. Persist results to SQLite network map
+1. Command handler builds a task prompt from a predefined template + flags
+2. AgentRunner assembles the initial state:
+     - SystemMessage (system prompt)
+     - HumanMessage (task prompt)
+     - iteration=0
+3. Graph streams through nodes:
+     agent node   — ChatOllama.invoke(messages) with tools bound
+                    (tools are LangChain @tool functions pre-filtered for stealth,
+                     then wrapped with a cache + stealth gate + audit hook)
+     tools node   — LangGraph's ToolNode dispatches tool_calls from the AIMessage,
+                    appends ToolMessages with the results
+     conditional  — if iteration >= max → summarize; elif AIMessage has tool_calls → tools; else → END
+     summarize    — one final ChatOllama call with NO tools bound, producing the final text
+4. Streaming tokens reach the Rich status panel via a BaseCallbackHandler
+5. AgentRunner extracts the last AIMessage.content as the final answer
+6. CLI renders via Rich; results persist to SQLite network map
 ```
 
-**Iteration cap:** Hard max of 15 tool calls per command invocation. If the LLM hasn't converged, it must summarize what it knows and stop.
+**Iteration cap:** Hard max of 15 agent turns per command invocation (configurable). When the cap is hit, the `summarize` node forces a final no-tools turn so the model produces a summary from the data it already gathered.
 
-**Error handling in loop:** If a tool fails, send the error back to the LLM as the tool result. The LLM should adapt — try an alternative tool or work with partial data. If the LLM returns an invalid tool call (bad name or args), inject a correction message and retry once.
+**Error handling in loop:** Tool wrappers catch exceptions and return a stringified error as the tool result. LangGraph feeds that back as a `ToolMessage`, so the LLM can adapt — try an alternative tool or work with partial data — without the agent crashing.
 
 ### 2.2 Stealth Mode (`-s` / `--stealth`)
 
 Stealth mode is a global flag that restricts the agent to passive tools only.
 
-- When ON: The tool registry filters out all ACTIVE category tools before sending definitions to the LLM. The LLM literally cannot see or call active tools. The safety gate also blocks any active tool execution as a second layer.
+- When ON: `available_tools(stealth=True)` filters out every tool tagged "active" before they are bound to the LLM. The LLM literally cannot see or call them. The per-run tool wrapper also re-checks on every invocation and refuses active tools, catching hallucinated tool calls for names that weren't bound.
 - When OFF: All tools are available. Active tools execute with audit logging. No interactive confirmation — the user opted into active mode by not using `-s`.
 - Default: Stealth OFF (full capability). User adds `-s` to restrict.
 
 This is enforced at TWO levels (defense in depth):
-1. Tool definitions sent to LLM exclude active tools in stealth mode
-2. Agent orchestrator rejects any active tool call in stealth mode (catches edge cases)
+1. Active tools are filtered out of the tool list passed to `ChatOllama.bind_tools` in stealth mode.
+2. The per-run tool wrapper re-checks on every invocation and returns a stealth-block error for any active tool call.
 
 ---
 
@@ -160,47 +165,30 @@ These apply to all commands:
 
 ## 4. Tool System
 
-### 4.1 Base Tool Contract
+### 4.1 Tool Contract — LangChain `@tool`
 
-Every tool implements this interface:
+Every tool is a plain function decorated with `@tool` from `langchain_core.tools`. The function's docstring becomes the LLM-visible description; parameter types become the JSON schema automatically. A module-level `CATEGORY = "passive"|"active"|"analysis"` constant classifies the tool for stealth filtering.
 
 ```python
-class BaseTool(ABC):
-    @property
-    def definition(self) -> ToolDefinition:
-        """Name, description, category, parameters, platform support."""
+from langchain_core.tools import tool
 
-    def execute(self, **kwargs) -> dict[str, Any]:
-        """Run the tool. Return structured JSON-serializable dict."""
+CATEGORY = "passive"
 
-    def is_available(self) -> bool:
-        """Can this tool run on the current OS?"""
-
-    def run(self, **kwargs) -> ToolResult:
-        """Public entry: wraps execute() with timing, error handling, audit."""
+@tool
+def get_arp_table() -> dict[str, Any]:
+    """Read the local ARP cache to find known neighbor devices."""
+    ...
 ```
 
-### 4.2 Tool Registry & Auto-Discovery
+`cyberpunk/tools/__init__.py` maintains a flat `TOOLS: list[BaseTool]` list and copies each module's `CATEGORY` onto `tool.tags` so stealth mode can filter by tag. `available_tools(stealth=False)` returns a filtered copy.
 
-The registry imports all modules in `cyberpunk/tools/`, finds `BaseTool` subclasses, and registers them. To add a new tool: create a file in `tools/`, implement `BaseTool` — done. No other wiring.
+### 4.2 Tool Registration
 
-### 4.3 Tool Definitions → Ollama Format
+To add a new tool: create a file in `cyberpunk/tools/` with a `CATEGORY` constant and an `@tool`-decorated function, then append it to the `TOOLS` list in `cyberpunk/tools/__init__.py`. No inheritance, no ABC, no metaclass magic.
 
-Each tool's `ToolDefinition` converts to Ollama's function-calling schema:
-```json
-{
-  "type": "function",
-  "function": {
-    "name": "get_arp_table",
-    "description": "Read the local ARP cache...",
-    "parameters": {
-      "type": "object",
-      "properties": {},
-      "required": []
-    }
-  }
-}
-```
+### 4.3 Tool Schemas → LangChain → Ollama
+
+LangChain builds the JSON schema from the function's type hints and docstring; `ChatOllama.bind_tools(tools)` formats it for Ollama's native function-calling API. The project no longer owns a bespoke `ToolDefinition` model — the single source of truth is the Python function signature.
 
 ### 4.4 Tool Inventory
 
@@ -272,41 +260,25 @@ NetworkMap:
 ```
 DeviceType: router, switch, access_point, firewall, workstation, server, printer, phone, iot, unknown
 OSFamily: linux, windows, macos, ios, android, freebsd, network_device, unknown
-ToolCategory: passive, active, analysis
 ScanType: passive, active, full
 ```
 
 ### 5.3 Agent Models
 
-```
-ToolDefinition:
-  name, description, category, parameters (list[ToolParameter]), requires_root, platform
-
-ToolParameter:
-  name, type, description, required, default, enum
-
-ToolCall:
-  tool_name, arguments (dict), call_id
-
-ToolResult:
-  tool_name, success, data (Any), error, execution_time_ms, call_id
-
-AgentMessage:
-  role (system/user/assistant/tool), content, tool_calls, tool_result, timestamp
-```
+The agent no longer owns its own message / tool-call / tool-result models. LangChain's `SystemMessage`, `HumanMessage`, `AIMessage`, and `ToolMessage` are used everywhere; tool schemas are derived from `@tool`-decorated function signatures. Tool category ("passive"/"active"/"analysis") lives on each tool's `.tags` list.
 
 ---
 
-## 6. LLM Integration (Ollama)
+## 6. LLM Integration (LangChain + LangGraph + Ollama)
 
 ### 6.1 Client Wrapper
 
-Wraps the `ollama` Python SDK. Responsibilities:
-- Connection health check on startup (is Ollama running? is the model pulled?)
-- Send messages with tool definitions
-- Parse tool_call responses from native function calling
-- Handle timeouts and retries (max 2 retries with exponential backoff)
-- Token usage tracking for debugging
+The project uses `langchain-ollama`'s `ChatOllama` as the chat model and LangGraph for the agent loop. Responsibilities:
+- `cyberpunk.agent.llm.build_chat_model(config)` constructs a streaming `ChatOllama`.
+- `cyberpunk.agent.llm.health_check(config)` talks to the raw `ollama` SDK once at startup to produce friendly "is Ollama running? is the model pulled?" messages.
+- `bind_tools(tools)` in `cyberpunk.agent.graph.build_graph` formats LangChain tools into Ollama's native function-calling schema.
+- Retries, timeouts, and streaming are inherited from `ChatOllama` and LangGraph — no hand-rolled retry logic.
+- Token usage is captured via a `BaseCallbackHandler` that also streams tokens to the Rich status panel and writes `llm_request`/`llm_response` events to the audit log.
 
 ### 6.2 Model Selection
 
@@ -496,13 +468,17 @@ cyberpunk/
 │   ├── cli.py                       # Typer app: analyze, map, diff, report, tools, config
 │   │
 │   ├── agent/
-│   │   ├── __init__.py
-│   │   ├── orchestrator.py          # Agent loop: LLM ↔ tool cycle, iteration cap, error handling
-│   │   ├── llm_client.py            # Ollama SDK wrapper: health check, tool calling, retries
+│   │   ├── __init__.py              # Exports AgentRunner
+│   │   ├── agent.py                 # AgentRunner: builds system/task prompts, wraps tools, streams graph
+│   │   ├── graph.py                 # LangGraph StateGraph: agent/tools/summarize nodes + conditional edge
+│   │   ├── llm.py                   # build_chat_model(config) + health_check(config)
+│   │   ├── tool_wrapper.py          # Per-run wrapper: cache + stealth gate + audit hooks
+│   │   ├── callbacks.py             # BaseCallbackHandler: token streaming + LLM audit events
+│   │   ├── status.py                # Rich Live status panel (iteration, tokens, tool history)
 │   │   └── prompts.py               # System prompt + task prompt templates (versioned, not user-editable)
 │   │
 │   ├── tools/
-│   │   ├── __init__.py              # BaseTool ABC, ToolRegistry (auto-discovery), ToolExecutionError
+│   │   ├── __init__.py              # Flat TOOLS list of @tool-decorated functions; available_tools(stealth=)
 │   │   ├── arp_scanner.py           # get_arp_table (passive)
 │   │   ├── interfaces.py            # get_network_interfaces (passive)
 │   │   ├── routing.py               # get_routing_table (passive)
@@ -551,7 +527,7 @@ cyberpunk/
     │   ├── test_arp_scanner.py
     │   ├── test_interfaces.py
     │   └── ...                      # One test file per tool
-    ├── test_agent.py                # Orchestrator loop with mocked Ollama
+    ├── test_agent.py                # LangGraph loop with mocked ChatOllama
     ├── test_models.py               # Pydantic model validation
     ├── test_config.py               # Config loading, merging, env overrides
     └── test_audit.py                # Audit log writing and format
@@ -565,7 +541,8 @@ cyberpunk/
 |-------|---------|-------------|
 | CLI framework | `typer` + `rich` | Type-hint-driven CLI generation + beautiful terminal output. Minimal code for polished UX. |
 | LLM runtime | Ollama | Local, OpenAI-compatible API, native tool calling, manages model lifecycle. If we ever swap to vLLM or a cloud provider, only the base URL changes. |
-| LLM client | `ollama` (Python SDK) | First-party SDK. Handles tool call parsing natively. |
+| Agent framework | `langchain` + `langgraph` | LangGraph `StateGraph` gives standard ReAct semantics with a conditional edge for iteration caps. LangChain supplies streaming, tool binding, callbacks, and message types. |
+| LLM client | `langchain-ollama` (`ChatOllama`) | Streaming + native tool calling against Ollama, integrated with LangChain's callback protocol. A thin `ollama` SDK call is kept only for the startup health check. |
 | Packet crafting | `scapy` | Gold standard for Python packet manipulation. Needed for ping sweep, port scan, packet capture. |
 | MAC vendor lookup | `mac-vendor-lookup` | Offline OUI database. Maps MAC prefixes to vendor names without network calls. |
 | Data validation | `pydantic` v2 | Schema enforcement at every boundary. Serialization to JSON/dict for LLM and SQLite. |
@@ -633,11 +610,11 @@ Use recursive dict merging — deeper keys override without clobbering siblings.
 
 **Build:**
 - Project skeleton, pyproject.toml, CLI entry point
-- Pydantic models (Device, NetworkMap, ToolDefinition, ToolResult)
-- BaseTool + ToolRegistry with auto-discovery
+- Pydantic models (Device, NetworkMap)
+- Flat `@tool`-based tool collection in `cyberpunk/tools/`
 - `get_arp_table` tool (all 3 platforms)
-- Ollama client wrapper with tool calling
-- Agent orchestrator (loop logic, iteration cap)
+- `ChatOllama` factory + startup health check
+- LangGraph `StateGraph` agent (agent/tools/summarize nodes, iteration cap)
 - System prompt v1
 - Rich output for single-tool result
 
@@ -719,7 +696,7 @@ Found 6 devices in ARP cache on 192.168.1.0/24
 
 ### 14.2 Performance
 
-- **Subprocess calls are expensive — don't repeat them.** Cache tool results within a single scan session. If `get_arp_table` was already called, don't call it again in the same `analyze` run. The orchestrator should track completed tool calls.
+- **Subprocess calls are expensive — don't repeat them.** Cache tool results within a single scan session. If `get_arp_table` was already called, don't call it again in the same `analyze` run. The per-run tool wrapper keeps a closure-captured cache keyed by tool name + sorted arguments.
 - **Use `shell=False` in all subprocess calls.** Always pass command as a list, never a string. This is both a security and performance requirement (avoids shell startup overhead).
 - **Async for concurrent probes.** Active tools like ping sweep and port scan should use `asyncio` to parallelize. Passive tools run sequentially (they're fast, <100ms each).
 - **Limit data sent to LLM.** Summarize large tool outputs before including in context. If ARP returns 200 entries, the LLM gets the full list. But if packet capture returns 10,000 lines, summarize to top talkers and protocol distribution. Never send raw pcap to the LLM.
@@ -728,7 +705,7 @@ Found 6 devices in ARP cache on 192.168.1.0/24
 ### 14.3 Security
 
 - **Never interpolate user input into subprocess commands.** All commands use list form with `shell=False`. The `--subnet` flag is validated as a valid CIDR notation before use.
-- **Validate all tool arguments.** The orchestrator validates arguments against the tool's parameter schema before execution. Reject unknown parameters.
+- **Validate all tool arguments.** LangChain validates tool arguments against the `@tool` function's signature before the body runs. Invalid arguments surface as tool-message errors the LLM can adapt to.
 - **Audit everything.** Every tool call, every LLM interaction, every scan start/end. The audit log is append-only and never truncated during normal operation.
 - **No secrets in config.** The config file contains no API keys (Ollama is local). If cloud LLM support is added later, use environment variables, never config files.
 - **Scapy runs with minimal privilege.** Document that active scanning may require root/admin. Never request elevated privileges programmatically — let the user run with sudo if needed.
@@ -736,8 +713,8 @@ Found 6 devices in ARP cache on 192.168.1.0/24
 
 ### 14.4 Readability
 
-- **One tool per file.** Each file in `tools/` contains exactly one `BaseTool` subclass. File name matches tool purpose (e.g., `arp_scanner.py` contains `ArpTableTool`).
-- **Flat is better than nested.** Avoid deep inheritance. `BaseTool` is the only base class. Tools don't inherit from each other.
+- **One tool per file.** Each file in `tools/` contains exactly one `@tool` function plus its platform helpers. File name matches tool purpose (e.g., `arp_scanner.py` contains `get_arp_table`).
+- **Flat is better than nested.** Tools are plain functions. No inheritance, no ABCs, no metaclass magic.
 - **Explicit over implicit.** No `**kwargs` propagation through multiple layers. Named parameters at every interface.
 - **Error messages include context.** Not "Command failed" but "Failed to read ARP table: 'ip' command not found. Are you on Linux with iproute2 installed?".
 - **Rich output is optional.** Every output path supports `json` and `plain` modes. Rich formatting is a rendering concern, not embedded in business logic.
@@ -753,7 +730,6 @@ Found 6 devices in ARP cache on 192.168.1.0/24
 ### 14.6 Naming Conventions
 
 - **Tool names:** `verb_noun` in snake_case — `get_arp_table`, `ping_sweep`, `lookup_mac_vendor`.
-- **Tool classes:** PascalCase matching the tool name — `ArpTableTool`, `PingSweepTool`.
 - **Module files:** snake_case matching purpose — `arp_scanner.py`, `ping_sweep.py`.
 - **Config keys:** snake_case, grouped by section.
 - **Constants:** UPPER_SNAKE_CASE.
@@ -774,22 +750,20 @@ Each tool is tested against **fixture files** — saved command outputs from rea
 
 **Test pattern:**
 ```python
-def test_arp_table_linux(monkeypatch):
+def test_arp_table_linux():
     """Test ARP parsing against real Linux `ip neigh show` output."""
     fixture = load_fixture("linux/ip_neigh.txt")
-    monkeypatch.setattr("cyberpunk.utils.system.run_command", lambda *a, **k: fake_result(fixture))
-    tool = ArpTableTool()
-    result = tool.run()
-    assert result.success
-    assert result.data["count"] == 8
-    assert result.data["entries"][0]["ip"] == "192.168.1.1"
+    with patch("cyberpunk.tools.arp_scanner.run_command", return_value=fake_result(fixture)):
+        result = get_arp_table.invoke({})
+    assert result["count"] == 8
+    assert result["entries"][0]["ip"] == "192.168.1.1"
 ```
 
 ### 15.2 Agent Tests (integration)
 
-Mock the Ollama client to return predetermined tool calls. Verify:
-- The orchestrator correctly executes the tool and feeds results back.
-- Iteration cap is respected.
+Mock `ChatOllama` (or a fake `BaseChatModel`) to return predetermined AI messages. Verify:
+- The graph correctly dispatches the tool, appends the result, and routes back to `agent`.
+- Iteration cap is respected (conditional edge routes to `summarize`).
 - Stealth mode blocks active tools.
 - Invalid tool calls are handled gracefully.
 

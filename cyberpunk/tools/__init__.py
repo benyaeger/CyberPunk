@@ -1,105 +1,56 @@
-"""Tool system: BaseTool ABC, ToolRegistry with auto-discovery."""
+"""CyberPunk tool collection.
+
+Every tool is a LangChain ``BaseTool`` (produced by the ``@tool`` decorator
+in the module that defines it). The module-level ``CATEGORY`` string on each
+tool module marks the tool as ``"passive"`` or ``"active"``; that marker is
+attached to the ``BaseTool`` as a tag so the agent can filter active tools
+out of stealth-mode runs.
+"""
 
 from __future__ import annotations
 
-import importlib
-import pkgutil
-import time
-from abc import ABC, abstractmethod
-from typing import Any
+from types import ModuleType
 
-from cyberpunk.models import ToolCategory, ToolDefinition, ToolResult
+from langchain_core.tools import BaseTool
+
+from cyberpunk.tools import arp_scanner, interfaces, routing
 
 
-class ToolExecutionError(Exception):
-    """Raised when a tool fails to execute."""
+def _register(module: ModuleType, attr: str) -> BaseTool:
+    """Pull the tool off its module and stamp it with the category tag.
+
+    LangChain's ``@tool`` decorator returns a ``StructuredTool`` whose
+    ``tags`` default to ``None``. Setting ``tags`` here means the agent can
+    do one-liner stealth filtering (``"active" not in tool.tags``) without
+    the tool module needing to know anything about the filter.
+    """
+    tool: BaseTool = getattr(module, attr)
+    tool.tags = [module.CATEGORY]
+    return tool
 
 
-class BaseTool(ABC):
-    """Abstract base class for all CyberPunk tools."""
-
-    @property
-    @abstractmethod
-    def definition(self) -> ToolDefinition:
-        """Tool metadata: name, description, category, parameters."""
-
-    @abstractmethod
-    def execute(self, **kwargs: Any) -> dict[str, Any]:
-        """Run the tool. Return structured JSON-serializable dict."""
-
-    @abstractmethod
-    def is_available(self) -> bool:
-        """Can this tool run on the current OS?"""
-
-    def run(self, **kwargs: Any) -> ToolResult:
-        """Public entry: wraps execute() with timing and error handling."""
-        start = time.perf_counter()
-        try:
-            data = self.execute(**kwargs)
-            elapsed = (time.perf_counter() - start) * 1000
-            return ToolResult(
-                tool_name=self.definition.name,
-                success=True,
-                data=data,
-                execution_time_ms=elapsed,
-            )
-        except Exception as e:
-            elapsed = (time.perf_counter() - start) * 1000
-            return ToolResult(
-                tool_name=self.definition.name,
-                success=False,
-                error=str(e),
-                execution_time_ms=elapsed,
-            )
+# The full tool catalog. Adding a new tool: drop a file in this package that
+# exports a ``@tool``-decorated function and a ``CATEGORY`` constant, then
+# add a line here.
+TOOLS: list[BaseTool] = [
+    _register(arp_scanner, "get_arp_table"),
+    _register(interfaces, "get_network_interfaces"),
+    _register(routing, "get_routing_table"),
+]
 
 
-class ToolRegistry:
-    """Registry that auto-discovers BaseTool subclasses from the tools package."""
+def available_tools(stealth: bool = False) -> list[BaseTool]:
+    """Return tools visible to the agent for a given run.
 
-    def __init__(self) -> None:
-        self._tools: dict[str, BaseTool] = {}
+    Args:
+        stealth: If ``True``, filter out anything tagged ``"active"``.
+            Tools without the ``"active"`` tag — i.e. passive and analysis
+            tools — are always included.
 
-    def discover(self) -> None:
-        """Import all modules in cyberpunk.tools and register BaseTool subclasses."""
-        import cyberpunk.tools as tools_pkg
-
-        for _importer, modname, _ispkg in pkgutil.iter_modules(tools_pkg.__path__):
-            module = importlib.import_module(f"cyberpunk.tools.{modname}")
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if (
-                    isinstance(attr, type)
-                    and issubclass(attr, BaseTool)
-                    and attr is not BaseTool
-                ):
-                    tool = attr()
-                    if tool.is_available():
-                        self._tools[tool.definition.name] = tool
-
-    def register(self, tool: BaseTool) -> None:
-        """Manually register a tool instance."""
-        self._tools[tool.definition.name] = tool
-
-    def get(self, name: str) -> BaseTool | None:
-        """Get a tool by name."""
-        return self._tools.get(name)
-
-    def get_definitions(
-        self,
-        stealth: bool = False,
-    ) -> list[ToolDefinition]:
-        """Get all tool definitions, filtering active tools in stealth mode."""
-        defs: list[ToolDefinition] = []
-        for tool in self._tools.values():
-            if stealth and tool.definition.category == ToolCategory.ACTIVE:
-                continue
-            defs.append(tool.definition)
-        return defs
-
-    def get_ollama_tools(self, stealth: bool = False) -> list[dict[str, Any]]:
-        """Get tool definitions in Ollama schema format."""
-        return [d.to_ollama_schema() for d in self.get_definitions(stealth=stealth)]
-
-    @property
-    def tools(self) -> dict[str, BaseTool]:
-        return dict(self._tools)
+    Returns:
+        A list of LangChain ``BaseTool`` instances ready to be bound to the
+        chat model via ``bind_tools(...)``.
+    """
+    if not stealth:
+        return list(TOOLS)
+    return [t for t in TOOLS if "active" not in (t.tags or [])]
