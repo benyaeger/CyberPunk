@@ -96,10 +96,7 @@ def build_system_prompt(
 
 def get_task_prompt(command: str, stealth: bool = False, **kwargs: str) -> str:
     """Get the task prompt for a CLI command."""
-    if command == "analyze" and stealth:
-        key = "analyze_stealth"
-    else:
-        key = command
+    key = "analyze_stealth" if command == "analyze" and stealth else command
 
     template = TASK_PROMPTS.get(key, TASK_PROMPTS["analyze"])
     return template.format(**kwargs) if kwargs else template

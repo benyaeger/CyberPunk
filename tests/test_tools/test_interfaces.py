@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from cyberpunk.tools.interfaces import NetworkInterfacesTool
+import pytest
+
+from cyberpunk.tools.interfaces import get_network_interfaces
 from cyberpunk.utils.system import CommandResult
 from tests.conftest import load_fixture
 
@@ -22,7 +24,6 @@ class TestInterfacesLinuxJson:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("linux/ip_addr.json")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="linux"),
@@ -35,15 +36,13 @@ class TestInterfacesLinuxJson:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        assert result.success
-        assert result.data["count"] == 4
+        assert result["count"] == 4
         # lo, eth0, wlan0, docker0
 
     def test_loopback_detected(self) -> None:
         fixture = load_fixture("linux/ip_addr.json")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="linux"),
@@ -56,15 +55,14 @@ class TestInterfacesLinuxJson:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        lo = result.data["interfaces"][0]
+        lo = result["interfaces"][0]
         assert lo["name"] == "lo"
         assert lo["is_loopback"] is True
 
     def test_ethernet_details(self) -> None:
         fixture = load_fixture("linux/ip_addr.json")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="linux"),
@@ -77,9 +75,9 @@ class TestInterfacesLinuxJson:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        eth0 = result.data["interfaces"][1]
+        eth0 = result["interfaces"][1]
         assert eth0["name"] == "eth0"
         assert eth0["ip"] == "192.168.1.10"
         assert eth0["mac"] == "aa:bb:cc:dd:ee:01"
@@ -91,7 +89,6 @@ class TestInterfacesLinuxJson:
 
     def test_down_interface(self) -> None:
         fixture = load_fixture("linux/ip_addr.json")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="linux"),
@@ -104,15 +101,14 @@ class TestInterfacesLinuxJson:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
         # docker0 has NO-CARRIER and operstate DOWN but UP in flags
-        docker0 = result.data["interfaces"][3]
+        docker0 = result["interfaces"][3]
         assert docker0["name"] == "docker0"
 
     def test_all_entries_have_required_fields(self) -> None:
         fixture = load_fixture("linux/ip_addr.json")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="linux"),
@@ -125,9 +121,9 @@ class TestInterfacesLinuxJson:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        for iface in result.data["interfaces"]:
+        for iface in result["interfaces"]:
             assert "name" in iface
             assert "is_up" in iface
             assert "is_loopback" in iface
@@ -138,7 +134,6 @@ class TestInterfacesDarwin:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("darwin/ifconfig.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="darwin"),
@@ -151,14 +146,12 @@ class TestInterfacesDarwin:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        assert result.success
-        assert result.data["count"] == 4  # lo0, en0, en1, utun0
+        assert result["count"] == 4  # lo0, en0, en1, utun0
 
     def test_en0_details(self) -> None:
         fixture = load_fixture("darwin/ifconfig.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="darwin"),
@@ -171,9 +164,9 @@ class TestInterfacesDarwin:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        en0 = result.data["interfaces"][1]
+        en0 = result["interfaces"][1]
         assert en0["name"] == "en0"
         assert en0["ip"] == "192.168.1.42"
         assert en0["mac"] == "aa:bb:cc:dd:ee:01"
@@ -185,7 +178,6 @@ class TestInterfacesDarwin:
 
     def test_loopback_detected(self) -> None:
         fixture = load_fixture("darwin/ifconfig.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="darwin"),
@@ -198,9 +190,9 @@ class TestInterfacesDarwin:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        lo0 = result.data["interfaces"][0]
+        lo0 = result["interfaces"][0]
         assert lo0["name"] == "lo0"
         assert lo0["is_loopback"] is True
 
@@ -210,7 +202,6 @@ class TestInterfacesWin32:
 
     def test_parse_entries(self) -> None:
         fixture = load_fixture("win32/ipconfig_all.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="win32"),
@@ -223,14 +214,12 @@ class TestInterfacesWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        assert result.success
-        assert result.data["count"] == 3  # Ethernet, Wi-Fi, Loopback
+        assert result["count"] == 3  # Ethernet, Wi-Fi, Loopback
 
     def test_ethernet_details(self) -> None:
         fixture = load_fixture("win32/ipconfig_all.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="win32"),
@@ -243,9 +232,9 @@ class TestInterfacesWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        eth = result.data["interfaces"][0]
+        eth = result["interfaces"][0]
         assert eth["name"] == "Ethernet"
         assert eth["ip"] == "192.168.1.5"
         assert eth["mac"] == "AA:BB:CC:DD:EE:01"
@@ -255,7 +244,6 @@ class TestInterfacesWin32:
 
     def test_disconnected_interface(self) -> None:
         fixture = load_fixture("win32/ipconfig_all.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="win32"),
@@ -268,16 +256,15 @@ class TestInterfacesWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        wifi = result.data["interfaces"][1]
+        wifi = result["interfaces"][1]
         assert wifi["name"] == "Wi-Fi"
         assert wifi["is_up"] is False
         assert "ip" not in wifi  # Disconnected, no IP assigned
 
     def test_loopback_detected(self) -> None:
         fixture = load_fixture("win32/ipconfig_all.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="win32"),
@@ -290,14 +277,13 @@ class TestInterfacesWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
-        loopback = result.data["interfaces"][2]
+        loopback = result["interfaces"][2]
         assert loopback["is_loopback"] is True
 
     def test_mac_normalized(self) -> None:
         fixture = load_fixture("win32/ipconfig_all.txt")
-        tool = NetworkInterfacesTool()
 
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="win32"),
@@ -310,10 +296,10 @@ class TestInterfacesWin32:
                 return_value=_fake_result(fixture),
             ),
         ):
-            result = tool.run()
+            result = get_network_interfaces.invoke({})
 
         # MAC should use colons, not dashes
-        eth = result.data["interfaces"][0]
+        eth = result["interfaces"][0]
         assert ":" in eth["mac"]
         assert "-" not in eth["mac"]
 
@@ -321,9 +307,7 @@ class TestInterfacesWin32:
 class TestInterfacesCommandNotFound:
     """Test graceful handling when the interfaces command is not available."""
 
-    def test_returns_error(self) -> None:
-        tool = NetworkInterfacesTool()
-
+    def test_raises_runtime_error(self) -> None:
         with (
             patch("cyberpunk.tools.interfaces.get_platform", return_value="linux"),
             patch(
@@ -334,8 +318,6 @@ class TestInterfacesCommandNotFound:
                 "cyberpunk.tools.interfaces.run_command",
                 return_value=_fake_fail(),
             ),
+            pytest.raises(RuntimeError),
         ):
-            result = tool.run()
-
-        assert not result.success
-        assert result.error is not None
+            get_network_interfaces.invoke({})

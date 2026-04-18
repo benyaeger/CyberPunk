@@ -124,9 +124,11 @@ CLI (Typer + Rich)
     |
 Predefined Command Handlers
     |
-Agent Orchestrator <-> Ollama (local LLM with tool calling)
+AgentRunner -> LangGraph StateGraph (agent node <-> tools node)
+    |                  |
+    |                  +-- ChatOllama (langchain-ollama, streaming + tool calling)
     |
-Tool Registry (auto-discovered)
+Tool collection (LangChain @tool functions, tagged "passive"/"active"/"analysis")
     +-- Passive Tools (read OS state, zero packets)
     +-- Active Tools (send packets, blocked in stealth mode)
     +-- Analysis Tools (process data, no network I/O)
@@ -134,9 +136,9 @@ Tool Registry (auto-discovered)
 Data Layer: SQLite + JSONL audit log
 ```
 
-The agent loop: command triggers a predefined prompt -> LLM calls tools -> orchestrator validates and executes -> results fed back -> repeat (max 15 iterations) -> final analysis rendered.
+The agent loop is a **LangGraph StateGraph**: `START -> agent -> (tool_calls?) -> tools -> agent -> ...` with a conditional edge that routes to a `summarize` node once the iteration cap is hit. Streaming tokens reach the Rich status panel through a `BaseCallbackHandler`, and tool results are cached per-run and wrapped by a stealth gate for defense in depth.
 
-**Stealth mode** (`-s`) restricts to passive tools only, enforced at two independent layers for defense in depth.
+**Stealth mode** (`-s`) restricts to passive tools only, enforced at two independent layers: active tools are filtered out before being bound to the LLM, and the per-run tool wrapper re-checks on every invocation.
 
 ## Configuration
 

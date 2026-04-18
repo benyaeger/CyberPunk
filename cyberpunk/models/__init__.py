@@ -1,4 +1,9 @@
-"""Pydantic models for CyberPunk."""
+"""Pydantic data models for CyberPunk.
+
+Agent/runtime concerns (tool calls, LLM messages, tool results) are owned by
+LangChain + LangGraph now, so this module only holds the domain data models
+— devices, interfaces, subnets, and the enums that describe them.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,6 @@ from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # ── Enums ──────────────────────────────────────────────────────────────────
 
@@ -34,12 +38,6 @@ class OSFamily(StrEnum):
     FREEBSD = "freebsd"
     NETWORK_DEVICE = "network_device"
     UNKNOWN = "unknown"
-
-
-class ToolCategory(StrEnum):
-    PASSIVE = "passive"
-    ACTIVE = "active"
-    ANALYSIS = "analysis"
 
 
 class ScanType(StrEnum):
@@ -110,74 +108,3 @@ class NetworkMap(BaseModel):
     scan_started: datetime = Field(default_factory=datetime.now)
     scan_finished: datetime | None = None
     tool_results: dict[str, Any] = Field(default_factory=dict)
-
-
-# ── Agent Models ───────────────────────────────────────────────────────────
-
-
-class ToolParameter(BaseModel):
-    name: str
-    type: str = "string"
-    description: str = ""
-    required: bool = False
-    default: Any = None
-    enum: list[str] | None = None
-
-
-class ToolDefinition(BaseModel):
-    name: str
-    description: str
-    category: ToolCategory
-    parameters: list[ToolParameter] = Field(default_factory=list)
-    requires_root: bool = False
-    platform: list[str] = Field(default_factory=lambda: ["linux", "darwin", "win32"])
-
-    def to_ollama_schema(self) -> dict[str, Any]:
-        """Convert to Ollama function-calling format."""
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for param in self.parameters:
-            prop: dict[str, Any] = {"type": param.type, "description": param.description}
-            if param.enum:
-                prop["enum"] = param.enum
-            properties[param.name] = prop
-            if param.required:
-                required.append(param.name)
-
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
-                },
-            },
-        }
-
-
-class ToolCall(BaseModel):
-    tool_name: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    call_id: str = ""
-
-
-class ToolResult(BaseModel):
-    tool_name: str
-    success: bool
-    data: Any = None
-    error: str | None = None
-    execution_time_ms: float = 0.0
-    call_id: str = ""
-
-
-class AgentMessage(BaseModel):
-    role: str  # system, user, assistant, tool
-    content: str = ""
-    tool_calls: list[ToolCall] = Field(default_factory=list)
-    tool_result: ToolResult | None = None
-    timestamp: datetime = Field(default_factory=datetime.now)
-    eval_count: int | None = None
-    prompt_eval_count: int | None = None

@@ -54,7 +54,7 @@ Config: `~/.cyberpunk/config.yaml` | env vars: `CYBERPUNK_MODEL`, `CYBERPUNK_OLL
 - **`mypy --strict`** -- type hints on every function signature
 - **Pydantic at all boundaries** -- no raw dicts crossing modules
 - **`shell=False` always** -- commands as lists, never strings
-- **One tool per file** -- `tools/arp_scanner.py` -> `ArpTableTool` class
+- **One tool per file** -- `tools/arp_scanner.py` -> `get_arp_table` `@tool` function
 - **Tool names:** `verb_noun` snake_case (`get_arp_table`, `ping_sweep`)
 - **One test file per source file** -- fixture-based, no real network needed
 - **Fixtures:** `tests/fixtures/{linux,darwin,win32}/`
@@ -63,10 +63,10 @@ Config: `~/.cyberpunk/config.yaml` | env vars: `CYBERPUNK_MODEL`, `CYBERPUNK_OLL
 
 ## Key Patterns
 
-**Adding a new tool:** Create a file in `cyberpunk/tools/`, subclass `BaseTool`, implement `definition`, `execute()`, `is_available()`. Auto-discovery handles the rest.
+**Adding a new tool:** Create a file in `cyberpunk/tools/`, declare a module-level `CATEGORY = "passive"|"active"|"analysis"`, write a `@tool`-decorated function, and append it to the `TOOLS` list in `cyberpunk/tools/__init__.py`.
 
 **Cross-platform commands:** All go through `run_command()` in `utils/system.py`. Map commands via `PLATFORM_COMMANDS`. Linux prefers `ip -j` (JSON). macOS/Windows use regex parsing. Every tool returns identical output schema regardless of OS.
 
-**Stealth mode:** Enforced at TWO layers -- (1) tool registry filters active tools from LLM definitions, (2) orchestrator blocks active tool execution. Both must hold.
+**Stealth mode:** Enforced at TWO layers -- (1) `available_tools(stealth=True)` filters active tools out before `bind_tools`, (2) the per-run tool wrapper re-checks stealth inside every invocation. Both must hold.
 
-**Agent loop:** Task prompt -> Ollama -> tool_call -> validate + execute -> feed result back -> repeat (max 15 iterations) -> final text -> Rich render.
+**Agent loop:** LangGraph `StateGraph` — `START → agent → (tool_calls? → tools → agent) | (iteration ≥ max → summarize) | END`. `ChatOllama` streams tokens via a `BaseCallbackHandler` into the Rich status panel; tool results are cached per-run and surfaced through `StatusDisplay`.
