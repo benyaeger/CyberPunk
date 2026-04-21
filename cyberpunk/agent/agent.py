@@ -126,7 +126,8 @@ class AgentRunner:
             if langfuse_handler is not None:
                 callbacks.append(langfuse_handler)
 
-            status.set_phase("Thinking", "[dim](iteration 1)[/dim]")
+            status.set_phase("Thinking", "(iteration 1)")
+            last_phase_iteration = 0
 
             # ``stream`` so we can update the phase between agent turns.
             # Each yielded update is ``{node_name: state_delta}``.
@@ -152,10 +153,18 @@ class AgentRunner:
             ):
                 final_state = update  # type: ignore[assignment]
                 current_iteration["value"] = update["iteration"]
-                if update["iteration"] < self.config.safety.max_agent_iterations:
+                # Only print a new phase header when the iteration actually
+                # advances — ``stream_mode="values"`` yields after every
+                # node visit, which would otherwise cause duplicate
+                # "Thinking (iteration N)" lines per turn.
+                if (
+                    update["iteration"] != last_phase_iteration
+                    and update["iteration"] < self.config.safety.max_agent_iterations
+                ):
+                    last_phase_iteration = update["iteration"]
                     status.set_phase(
                         "Thinking",
-                        f"[dim](iteration {update['iteration'] + 1})[/dim]",
+                        f"(iteration {update['iteration'] + 1})",
                     )
 
             if final_state is None:  # pragma: no cover — guard

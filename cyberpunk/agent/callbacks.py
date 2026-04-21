@@ -117,6 +117,9 @@ class AgentCallbacks(BaseCallbackHandler):
         elapsed_ms = (time.time() - self._starts.pop(run_id, time.time())) * 1000
         tokens = "".join(self._token_buffers.pop(run_id, []))
         iteration = self._iteration()
+        # Terminate the streaming line so subsequent log entries sit on
+        # their own line instead of being appended to the last token.
+        self._status.end_stream()
 
         if tokens:
             self._audit.log_llm_tokens(tokens, iteration)

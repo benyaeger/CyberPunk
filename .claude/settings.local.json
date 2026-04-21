@@ -64,7 +64,10 @@
       "Bash(LANGFUSE_DEBUG=true .venv/bin/cyberpunk analyze -s -o plain)",
       "Bash(env LANGFUSE_DEBUG=true .venv/bin/cyberpunk analyze -s -o plain)",
       "Bash(export LANGFUSE_DEBUG=true)",
-      "Bash(chflags -R nohidden .venv/lib/python3.14/site-packages/)"
+      "Bash(chflags -R nohidden .venv/lib/python3.14/site-packages/)",
+      "Bash(ruff check *)",
+      "Bash(ruff format *)",
+      "Bash(pytest -q)"
     ]
   }
 }

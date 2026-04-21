@@ -151,8 +151,4 @@ Things that aren't obvious from reading the code:
 
 ## What's Next
 
-- Re-verify the end-to-end flow against a live Ollama (`cyberpunk analyze -s`) and confirm streaming + audit events still look right after the migration.
-- `cyberpunk tools` command polish.
-- Config command (`cyberpunk config`).
-- Full stealth analysis integration test using a fake `BaseChatModel` that scripts tool-call / final-answer sequences.
-- Phase 2 active tools (ping sweep, port scan, DNS reverse) + stealth gating integration test.
+Make sure the CLI Obseravbility UX is completed - full token stream, tools calls and final answer.

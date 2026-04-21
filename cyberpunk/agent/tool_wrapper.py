@@ -80,6 +80,8 @@ def _wrap_one(
             status.log_cached(raw.name)
             return cache[cache_key]
 
+        status.log_tool_start(raw.name, kwargs)
+
         if stealth and "active" in tags:
             # Defense-in-depth stealth block. The model shouldn't have been
             # able to pick this tool — it wasn't in the bound list — but if
@@ -129,7 +131,7 @@ def _wrap_one(
             result_summary=summary,
             result_data=data,
         )
-        status.log_tool_success(raw.name, elapsed_ms)
+        status.log_tool_success(raw.name, elapsed_ms, data=data)
 
         serialized = json.dumps(data, default=str)
         cache[cache_key] = serialized

@@ -1,131 +1,152 @@
-"""Claude-Code-style live status panel for agent runs."""
+"""Streaming, scroll-back-friendly status output for agent runs.
+
+Unlike a ``rich.Live`` panel (which re-renders in place and forces us to
+truncate streamed tokens to fit a fixed box), this display writes every
+event — tokens, tool invocations, tool results, errors — directly into
+the console. Nothing gets overwritten, so the user can scroll back
+through the agent's full chain of thought and every tool's full output.
+"""
 
 from __future__ import annotations
 
+import json
 import time
+from typing import Any
 
-from rich.console import Console, Group
-from rich.live import Live
+from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
-from rich.spinner import Spinner
-from rich.text import Text
+from rich.syntax import Syntax
 
 
 class StatusDisplay:
-    """Rich ``Live`` panel showing agent phase, streamed tokens, and tool history.
+    """Scrollable, streaming status log for a single agent run.
 
-    The panel is UI — it owns the terminal while the agent runs, so every
-    progress signal (streamed tokens, tool completions, cache hits, stealth
-    blocks) is forwarded here instead of being printed separately. All token
-    streaming goes through :meth:`add_token`, triggered from the LangChain
-    ``BaseCallbackHandler`` in :mod:`cyberpunk.agent.callbacks`.
+    Every method writes to the console and never rewinds. LLM token
+    streaming goes through :meth:`add_token` — tokens are written as raw
+    text with explicit flushing so they appear letter-by-letter in the
+    terminal (same UX as a typewriter). Tool calls, results, cache hits,
+    and stealth blocks become permanent log lines above whatever comes
+    next.
     """
 
     def __init__(self, console: Console) -> None:
         self._console = console
-        self._live: Live | None = None
-        self._phase = ""
-        self._detail = ""
-        self._token_buf = ""
-        self._history: list[Text] = []
         self._start_time = time.monotonic()
+        # Whether we're mid-way through emitting an LLM token stream.
+        # Used to know when to prepend an indent / terminate with a newline.
+        self._streaming = False
 
     def start(self) -> None:
-        """Begin rendering the live panel."""
+        """Mark the beginning of the run with a visual divider."""
         self._start_time = time.monotonic()
-        self._live = Live(
-            self._render(),
-            console=self._console,
-            refresh_per_second=12,
-            transient=False,
-        )
-        self._live.start()
+        self._console.rule("[bold cyan]CyberPunk Agent[/bold cyan]", style="cyan")
 
     def stop(self) -> None:
-        """Tear down the live panel. Safe to call even if ``start`` wasn't."""
-        if self._live:
-            self._live.stop()
-            self._live = None
+        """Close out the run. Safe to call even if ``start`` wasn't."""
+        self._finish_stream()
+        self._console.rule(f"[dim]Completed in {self._elapsed()}[/dim]", style="dim cyan")
 
     def set_phase(self, phase: str, detail: str = "") -> None:
-        """Switch the spinner to a new phase (e.g. "Thinking", "Running tool")."""
-        self._phase = phase
-        self._detail = detail
-        self._token_buf = ""
-        self._refresh()
+        """Emit a phase header (e.g. ``Thinking (iteration 2)``)."""
+        self._finish_stream()
+        suffix = f" [dim]{detail}[/dim]" if detail else ""
+        self._console.print()
+        self._console.print(f"[bold cyan]▶ {escape(phase)}[/bold cyan]{suffix}")
 
     def add_token(self, token: str) -> None:
-        """Append a streamed LLM token to the preview buffer."""
-        self._token_buf += token
-        # Keep only the tail — displaying the full generation would crowd
-        # the terminal and render the spinner invisible.
-        if len(self._token_buf) > 120:
-            self._token_buf = "…" + self._token_buf[-119:]
-        self._refresh()
+        """Stream one LLM token to the terminal, raw and flushed.
 
-    def log_tool_success(self, tool_name: str, elapsed_ms: float) -> None:
-        """Record a successful tool execution."""
-        self._history.append(
-            Text.from_markup(
-                f"  [green]✓[/green] [cyan]{escape(tool_name)}[/cyan] "
-                f"[dim]({elapsed_ms:.0f}ms)[/dim]"
-            )
+        Writes bypass Rich's renderer so markup inside generated text is
+        not interpreted and tokens appear immediately (no buffering until
+        a full line is complete).
+        """
+        if not token:
+            return
+        if not self._streaming:
+            self._streaming = True
+            self._console.file.write("  ")
+        self._console.file.write(token)
+        self._console.file.flush()
+
+    def end_stream(self) -> None:
+        """Called when an LLM turn finishes; terminates the token line."""
+        self._finish_stream()
+
+    def log_tool_start(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        """Announce that a tool is about to execute."""
+        self._finish_stream()
+        args_repr = ""
+        if arguments:
+            args_repr = ", ".join(f"{k}={v!r}" for k, v in arguments.items())
+            args_repr = f" [dim]({escape(args_repr)})[/dim]"
+        self._console.print(
+            f"  [cyan]→[/cyan] [bold cyan]{escape(tool_name)}[/bold cyan]{args_repr}"
         )
-        self._refresh()
+
+    def log_tool_success(
+        self,
+        tool_name: str,
+        elapsed_ms: float,
+        data: Any = None,
+    ) -> None:
+        """Record a successful tool execution and dump its full result."""
+        self._finish_stream()
+        self._console.print(
+            f"  [green]✓[/green] [cyan]{escape(tool_name)}[/cyan] [dim]({elapsed_ms:.0f}ms)[/dim]"
+        )
+        if data is not None:
+            self._print_result(data)
 
     def log_tool_error(self, tool_name: str, error: str) -> None:
-        """Record a tool execution that failed or raised."""
-        self._history.append(
-            Text.from_markup(
-                f"  [red]✗[/red] [cyan]{escape(tool_name)}[/cyan] [dim]{escape(error)}[/dim]"
-            )
+        """Record a failed tool execution."""
+        self._finish_stream()
+        self._console.print(
+            f"  [red]✗[/red] [cyan]{escape(tool_name)}[/cyan] [red]{escape(error)}[/red]"
         )
-        self._refresh()
 
     def log_cached(self, tool_name: str) -> None:
-        """Record a cache hit (tool result reused from the per-run cache)."""
-        self._history.append(
-            Text.from_markup(
-                f"  [yellow]↺[/yellow] [cyan]{escape(tool_name)}[/cyan] [dim](cached)[/dim]"
-            )
+        """Record a per-run cache hit."""
+        self._finish_stream()
+        self._console.print(
+            f"  [yellow]↺[/yellow] [cyan]{escape(tool_name)}[/cyan] [dim](cached)[/dim]"
         )
-        self._refresh()
 
     def log_stealth_block(self, tool_name: str) -> None:
-        """Record that stealth mode blocked an active tool."""
-        self._history.append(
-            Text.from_markup(
-                f"  [red]⊘[/red] [cyan]{escape(tool_name)}[/cyan] "
-                f"[dim]blocked by stealth mode[/dim]"
+        """Record a tool call refused by stealth mode."""
+        self._finish_stream()
+        self._console.print(
+            f"  [red]⊘[/red] [cyan]{escape(tool_name)}[/cyan] [dim]blocked by stealth mode[/dim]"
+        )
+
+    def _print_result(self, data: Any) -> None:
+        """Pretty-print a tool result payload inside a dim-bordered panel."""
+        try:
+            body = json.dumps(data, indent=2, default=str, ensure_ascii=False)
+        except (TypeError, ValueError):
+            body = str(data)
+        self._console.print(
+            Panel(
+                Syntax(
+                    body,
+                    "json",
+                    theme="ansi_dark",
+                    background_color="default",
+                    word_wrap=True,
+                ),
+                border_style="dim",
+                padding=(0, 1),
+                expand=True,
             )
         )
-        self._refresh()
+
+    def _finish_stream(self) -> None:
+        """End an in-progress token stream with a newline, if any."""
+        if self._streaming:
+            self._console.file.write("\n")
+            self._console.file.flush()
+            self._streaming = False
 
     def _elapsed(self) -> str:
         s = time.monotonic() - self._start_time
         return f"{s:.0f}s" if s < 60 else f"{s / 60:.1f}m"
-
-    def _render(self) -> Panel:
-        parts: list[Text | Spinner] = list(self._history)
-
-        if self._phase:
-            detail = f"  {self._detail}" if self._detail else ""
-            spinner_text = f" {self._phase}{detail}"
-            if self._token_buf:
-                preview = self._token_buf.replace("\n", " ").strip()
-                if preview:
-                    spinner_text += f"\n  [dim]{escape(preview)}[/dim]"
-            parts.append(Text(""))
-            parts.append(Spinner("dots", text=Text.from_markup(spinner_text), style="cyan"))
-
-        return Panel(
-            Group(*parts) if parts else Text("[dim]Starting...[/dim]"),
-            title=f"[bold cyan]CyberPunk Agent[/bold cyan] [dim]{self._elapsed()}[/dim]",
-            border_style="dim cyan",
-            padding=(0, 1),
-        )
-
-    def _refresh(self) -> None:
-        if self._live:
-            self._live.update(self._render())
