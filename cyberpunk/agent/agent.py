@@ -12,6 +12,7 @@ from rich.console import Console
 from cyberpunk.agent.callbacks import AgentCallbacks
 from cyberpunk.agent.graph import AgentState, build_graph
 from cyberpunk.agent.llm import build_chat_model
+from cyberpunk.agent.observability import build_langfuse_handler, flush_langfuse
 from cyberpunk.agent.prompts import build_system_prompt, get_task_prompt
 from cyberpunk.agent.status import StatusDisplay
 from cyberpunk.agent.tool_wrapper import wrap_tools_for_run
@@ -66,7 +67,13 @@ class AgentRunner:
         status.start()
 
         try:
-            self.audit.log_scan("scan_start", scan_type="stealth" if stealth else "full")
+            available = available_tools(stealth=stealth)
+            self.audit.log_scan(
+                "scan_start",
+                scan_type="stealth" if stealth else "full",
+                tool_count=len(available),
+                tool_names=[t.name for t in available],
+            )
 
             # Per-run cache — scoped to this invocation. Keys are stable
             # strings built from (tool name + sorted argument tuple).
@@ -80,7 +87,7 @@ class AgentRunner:
             #       wrapper to catch hallucinated tool calls for names that
             #       weren't bound.
             tools = wrap_tools_for_run(
-                available_tools(stealth=stealth),
+                available,
                 stealth=stealth,
                 cache=cache,
                 status=status,
@@ -108,11 +115,16 @@ class AgentRunner:
             def _iteration() -> int:
                 return current_iteration["value"]
 
-            callbacks = AgentCallbacks(
-                status=status,
-                audit=self.audit,
-                iteration_provider=_iteration,
-            )
+            callbacks: list[object] = [
+                AgentCallbacks(
+                    status=status,
+                    audit=self.audit,
+                    iteration_provider=_iteration,
+                )
+            ]
+            langfuse_handler = build_langfuse_handler()
+            if langfuse_handler is not None:
+                callbacks.append(langfuse_handler)
 
             status.set_phase("Thinking", "[dim](iteration 1)[/dim]")
 
@@ -122,7 +134,13 @@ class AgentRunner:
             for update in graph.stream(
                 state,
                 config={
-                    "callbacks": [callbacks],
+                    "callbacks": callbacks,
+                    "run_name": f"cyberpunk-{command}-{'stealth' if stealth else 'full'}",
+                    "tags": [
+                        f"command:{command}",
+                        f"mode:{'stealth' if stealth else 'full'}",
+                        f"model:{self.config.llm.model}",
+                    ],
                     # Allow enough node visits for max_iterations
                     # (agent + tools) plus the summarize path and a small
                     # buffer. LangGraph raises GraphRecursionError beyond
@@ -153,6 +171,9 @@ class AgentRunner:
             return _extract_final_text(final_state)
         finally:
             status.stop()
+            # CLI is short-lived — flush Langfuse's background worker or
+            # in-flight spans never make it to the server.
+            flush_langfuse()
 
 
 def _extract_final_text(state: AgentState) -> str:

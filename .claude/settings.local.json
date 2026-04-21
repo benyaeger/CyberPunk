@@ -42,7 +42,29 @@
       "Bash(python3 -m ruff check .)",
       "Bash(python3 -m ruff check cyberpunk/agent/orchestrator.py)",
       "Bash(python3 -m ruff check --fix cyberpunk/agent/orchestrator.py)",
-      "Bash(python3 -m ruff check cyberpunk/agent/orchestrator.py cyberpunk/agent/prompts.py cyberpunk/cli.py)"
+      "Bash(python3 -m ruff check cyberpunk/agent/orchestrator.py cyberpunk/agent/prompts.py cyberpunk/cli.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('cyberpunk/agent/agent.py'\\).read\\(\\)\\); ast.parse\\(open\\('cyberpunk/agent/observability.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(gh api *)",
+      "Bash(python3 -c \"import json,sys; [print\\(x['name'],x['type']\\) for x in json.load\\(sys.stdin\\)]\")",
+      "Bash(mkdir -p /Users/benyaeger/.claude/skills/langfuse/references)",
+      "Bash(curl -sL https://raw.githubusercontent.com/langfuse/skills/main/skills/langfuse/SKILL.md -o /Users/benyaeger/.claude/skills/langfuse/SKILL.md)",
+      "Bash(python3 -c \"import json,sys; [print\\(x['name'],x.get\\('download_url',''\\)\\) for x in json.load\\(sys.stdin\\)]\")",
+      "WebFetch(domain:langfuse.com)",
+      "Bash(.venv/bin/python -c \"import langfuse; print\\(langfuse.__version__\\)\")",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(env -u LANGFUSE_PUBLIC_KEY -u LANGFUSE_SECRET_KEY -u LANGFUSE_HOST .venv/bin/python -c ' *)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/python -c \"import cyberpunk; print\\(cyberpunk.__file__\\)\")",
+      "Read(//Library/Frameworks/Python.framework/Versions/3.14/bin/**)",
+      "Bash(.venv/bin/python3.14 -c \"import cyberpunk; print\\(cyberpunk.__file__\\)\")",
+      "Bash(.venv/bin/python3.14 /Users/benyaeger/Documents/AI/Projects/CyberPunk/.venv/bin/cyberpunk --version)",
+      "Bash(.venv/bin/python3.14 -c ' *)",
+      "Bash(.venv/bin/python3.14 -v /Users/benyaeger/Documents/AI/Projects/CyberPunk/.venv/bin/cyberpunk --version)",
+      "Bash(.venv/bin/cyberpunk analyze *)",
+      "Bash(LANGFUSE_DEBUG=true .venv/bin/cyberpunk analyze -s -o plain)",
+      "Bash(env LANGFUSE_DEBUG=true .venv/bin/cyberpunk analyze -s -o plain)",
+      "Bash(export LANGFUSE_DEBUG=true)",
+      "Bash(chflags -R nohidden .venv/lib/python3.14/site-packages/)"
     ]
   }
 }

@@ -85,6 +85,13 @@ def build_graph(
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and last.tool_calls:
             return "tools"
+        # Empty AIMessage (no content, no tool calls) indicates the model
+        # stalled — often a harmony/channel parsing glitch. Force a summary
+        # pass instead of terminating silently with no output.
+        if isinstance(last, AIMessage) and not (
+            isinstance(last.content, str) and last.content.strip()
+        ):
+            return "summarize"
         return "end"
 
     graph: StateGraph[AgentState, AgentState, AgentState] = StateGraph(AgentState)

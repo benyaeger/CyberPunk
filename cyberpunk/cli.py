@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-import typer
+# Load .env at CLI entry — must happen BEFORE any import that reads env vars
+# (Langfuse, config, etc.) so every subcommand has the same environment.
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import typer  # noqa: E402
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -15,6 +21,7 @@ from cyberpunk import __app_name__, __version__
 from cyberpunk.agent import AgentRunner
 from cyberpunk.agent.llm import health_check
 from cyberpunk.core.config import load_config
+from cyberpunk.core.health import run_all as run_health_checks
 from cyberpunk.tools import available_tools
 
 app = typer.Typer(
@@ -72,7 +79,8 @@ def analyze(
     if verbose:
         console.print(f"[dim]{msg}[/dim]")
 
-    tool_count = len(available_tools(stealth=stealth))
+    tools = available_tools(stealth=stealth)
+    tool_count = len(tools)
     mode = "stealth" if stealth else "full"
     console.print(
         Panel(
@@ -85,6 +93,8 @@ def analyze(
             border_style="cyan",
         )
     )
+    if verbose:
+        console.print(f"[dim]Bound tools: {', '.join(t.name for t in tools)}[/dim]")
 
     runner = AgentRunner(config=config, console=console)
     try:
@@ -136,6 +146,34 @@ def tools(
         )
 
     console.print(table)
+
+
+@app.command()
+def health(
+    config_path: Annotated[
+        str | None, typer.Option("--config", "-c", help="Config file path.")
+    ] = None,
+) -> None:
+    """Check the health of every external integration (Ollama, Langfuse, ...)."""
+    config = load_config(config_path)
+
+    table = Table(title="Integration Health")
+    table.add_column("Integration", style="cyan")
+    table.add_column("Status")
+    table.add_column("Detail")
+
+    all_ok = True
+    for name, result in run_health_checks(config):
+        if result.ok:
+            status = "[green]OK[/green]"
+        else:
+            status = "[red]FAIL[/red]"
+            all_ok = False
+        table.add_row(name, status, result.message)
+
+    console.print(table)
+    if not all_ok:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

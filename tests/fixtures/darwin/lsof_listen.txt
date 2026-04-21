@@ -1,0 +1,5 @@
+COMMAND     PID   USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+launchd       1   root   10u  IPv6 0x1234abcd      0t0  TCP *:ssh (LISTEN)
+launchd       1   root   11u  IPv4 0x5678efgh      0t0  TCP *:ssh (LISTEN)
+rapportd    542   user    7u  IPv4 0x9abc0000      0t0  TCP *:49206 (LISTEN)
+cupsd       432   root    6u  IPv4 0xdeadbeef      0t0  TCP localhost:ipp (LISTEN)

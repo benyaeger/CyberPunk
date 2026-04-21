@@ -13,7 +13,16 @@ from types import ModuleType
 
 from langchain_core.tools import BaseTool
 
-from cyberpunk.tools import arp_scanner, interfaces, routing
+from cyberpunk.tools import (
+    arp_scanner,
+    connections,
+    dhcp_lease,
+    dns_config,
+    interfaces,
+    listeners,
+    mac_lookup,
+    routing,
+)
 
 
 def _register(module: ModuleType, attr: str) -> BaseTool:
@@ -36,6 +45,11 @@ TOOLS: list[BaseTool] = [
     _register(arp_scanner, "get_arp_table"),
     _register(interfaces, "get_network_interfaces"),
     _register(routing, "get_routing_table"),
+    _register(connections, "get_active_connections"),
+    _register(listeners, "get_listening_services"),
+    _register(dns_config, "get_dns_config"),
+    _register(dhcp_lease, "get_dhcp_lease"),
+    _register(mac_lookup, "lookup_mac_vendor"),
 ]
 
 

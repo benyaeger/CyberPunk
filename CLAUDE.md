@@ -65,6 +65,8 @@ Config: `~/.cyberpunk/config.yaml` | env vars: `CYBERPUNK_MODEL`, `CYBERPUNK_OLL
 
 **Adding a new tool:** Create a file in `cyberpunk/tools/`, declare a module-level `CATEGORY = "passive"|"active"|"analysis"`, write a `@tool`-decorated function, and append it to the `TOOLS` list in `cyberpunk/tools/__init__.py`.
 
+**Adding a new external integration:** Every integration with an external service (LLM backend, observability, cloud API, etc.) MUST register a health probe in `cyberpunk/core/health.py`. Write a `check_<name>(config) -> HealthResult` function and append a `HealthCheck` entry to `CHECKS`. The probe must never raise — catch broad exceptions and surface them in `message`. `cyberpunk health` is the single source of truth for "is everything wired up".
+
 **Cross-platform commands:** All go through `run_command()` in `utils/system.py`. Map commands via `PLATFORM_COMMANDS`. Linux prefers `ip -j` (JSON). macOS/Windows use regex parsing. Every tool returns identical output schema regardless of OS.
 
 **Stealth mode:** Enforced at TWO layers -- (1) `available_tools(stealth=True)` filters active tools out before `bind_tools`, (2) the per-run tool wrapper re-checks stealth inside every invocation. Both must hold.

@@ -1,0 +1,7 @@
+Netid  State      Recv-Q  Send-Q  Local Address:Port      Peer Address:Port      Process
+tcp    ESTAB      0       0       192.168.1.100:52341     93.184.216.34:443      users:(("firefox",pid=1234,fd=42))
+tcp    ESTAB      0       0       192.168.1.100:52342     140.82.121.3:443       users:(("chrome",pid=5678,fd=10))
+tcp    LISTEN     0       128     0.0.0.0:22              0.0.0.0:*              users:(("sshd",pid=901,fd=3))
+tcp    LISTEN     0       100     127.0.0.1:631           0.0.0.0:*              users:(("cupsd",pid=432,fd=7))
+udp    UNCONN     0       0       0.0.0.0:68              0.0.0.0:*              users:(("dhclient",pid=567,fd=7))
+udp    UNCONN     0       0       192.168.1.100:51234     8.8.8.8:53             users:(("systemd-resolve",pid=210,fd=18))

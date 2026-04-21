@@ -34,7 +34,7 @@ class OutputConfig(BaseModel):
 class SafetyConfig(BaseModel):
     log_all_actions: bool = True
     audit_log_dir: str = "logs"
-    max_agent_iterations: int = 15
+    max_agent_iterations: int = 20
 
 
 class DatabaseConfig(BaseModel):
